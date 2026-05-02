@@ -1,0 +1,180 @@
+const cors = require('cors');
+const express = require('express');
+const mysql = require('mysql2/promise');
+
+const app = express();
+app.use(express.json()); // IMPORTANT for POST
+
+// DB connection
+const db = mysql.createPool({
+    host: '127.0.0.1',
+    user: 'root',
+    password: 'root123',
+    database: 'water_db'
+});
+
+
+// ------------------ BASIC ROUTE ------------------
+app.get('/', (req, res) => {
+    res.send('API running...');
+});
+
+
+// ------------------ CUSTOMERS API ------------------
+app.get('/api/customers', async (req, res) => {
+    try {
+        const [rows] = await db.query(`
+            SELECT id, name, phone, address, status
+            FROM customers
+        `);
+        res.json(rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+
+// ------------------ DASHBOARD API ------------------
+app.get('/api/dashboard', async (req, res) => {
+    const selectedMonth = req.query.month || '';
+
+    try {
+        let query = `
+        SELECT 
+            c.name,
+            c.phone,
+            d.month,
+            d.total_bottles,
+            s.rate_per_bottle,
+            s.maintenance_charges,
+            (d.total_bottles * s.rate_per_bottle + s.maintenance_charges) AS total_bill,
+            COALESCE(p.total_paid, 0) AS total_paid,
+            (d.total_bottles * s.rate_per_bottle + s.maintenance_charges 
+             - COALESCE(p.total_paid, 0)) AS balance
+        FROM
+        (
+            SELECT 
+                customer_id,
+                DATE_FORMAT(date, '%b-%y') AS month,
+                SUM(bottles_refilled) AS total_bottles
+            FROM deliveries
+            GROUP BY customer_id, month
+        ) d
+        JOIN customers c ON c.id = d.customer_id
+        JOIN settings s ON s.month_year = d.month
+        LEFT JOIN
+        (
+            SELECT 
+                customer_id,
+                DATE_FORMAT(date, '%b-%y') AS month,
+                SUM(amount_paid) AS total_paid
+            FROM payments
+            GROUP BY customer_id, month
+        ) p
+        ON p.customer_id = d.customer_id AND p.month = d.month
+        `;
+
+        if (selectedMonth) {
+            query += ` WHERE d.month = '${selectedMonth}'`;
+        }
+
+        const [rows] = await db.query(query);
+
+        let summary = {
+            totalCustomers: rows.length,
+            totalRevenue: rows.reduce((sum, r) => sum + r.total_bill, 0),
+            totalPending: rows.reduce((sum, r) => sum + r.balance, 0)
+        };
+
+        res.json({
+            summary,
+            data: rows
+        });
+
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+
+// ------------------ GET PAYMENTS ------------------
+app.get('/api/payments', async (req, res) => {
+    try {
+        const [rows] = await db.query(`
+            SELECT 
+                p.id,
+                c.name,
+                p.amount_paid,
+                p.date,
+                p.method
+            FROM payments p
+            JOIN customers c ON c.id = p.customer_id
+            ORDER BY p.date DESC
+        `);
+
+        res.json(rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+
+// ------------------ ADD PAYMENT ------------------
+app.post('/api/payments', async (req, res) => {
+    const { customer_id, amount_paid, method } = req.body;
+
+    try {
+        await db.query(`
+            INSERT INTO payments (customer_id, amount_paid, method, date)
+            VALUES (?, ?, ?, NOW())
+        `, [customer_id, amount_paid, method]);
+
+        res.json({ message: 'Payment added successfully' });
+
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ------------------ GET DELIVERIES ------------------
+app.get('/api/deliveries', async (req, res) => {
+    try {
+        const [rows] = await db.query(`
+            SELECT 
+                d.id,
+                c.name,
+                d.date,
+                d.bottles_refilled
+            FROM deliveries d
+            JOIN customers c ON c.id = d.customer_id
+            ORDER BY d.date DESC
+        `);
+
+        res.json(rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+
+// ------------------ ADD DELIVERY ------------------
+app.post('/api/deliveries', async (req, res) => {
+    const { customer_id, bottles_refilled } = req.body;
+
+    try {
+        await db.query(`
+            INSERT INTO deliveries (customer_id, bottles_refilled, date)
+            VALUES (?, ?, NOW())
+        `, [customer_id, bottles_refilled]);
+
+        res.json({ message: 'Delivery added successfully' });
+
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+
+app.listen(4000, '0.0.0.0', () => {
+    console.log('Server running on port 4000');
+});

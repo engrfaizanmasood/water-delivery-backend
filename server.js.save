@@ -1,0 +1,64 @@
+cd ~/dashboardcd ~/dashboardcd ~/dashboardcd ~/dashboardcd ~/dashboardcd ~/dashboardconst express = require('express');
+const mysql = require('mysql2/promise');
+
+const app = express();
+
+// DB connection
+const db = mysql.createPool({
+    host: '127.0.0.1',
+    user: 'root',
+    password: 'root123',
+    database: 'water_db'
+});
+
+// Route
+app.get('/', async (req, res) => {
+    try {
+        const [rows] = await db.query(`
+            SELECT 
+                c.name,
+                SUM(d.bottles_refilled) AS total_bottles,
+                MAX(s.rate_per_bottle) AS rate_per_bottle,
+                SUM(d.bottles_refilled) * MAX(s.rate_per_bottle) AS total_bill
+            FROM deliveries d
+            JOIN customers c ON c.id = d.customer_id
+            JOIN settings s ON s.month_year = DATE_FORMAT(d.date, '%b-%y')
+            GROUP BY c.name
+        `);
+
+        let html = `
+        <h1>Dashboard</h1>
+        <table border="1" cellpadding="10">
+            <tr>
+                <th>Name</th>
+                <th>Bottles</th>
+                <th>Rate</th>
+                <th>Total Bill</th>
+            </tr>
+        `;
+
+        rows.forEach(r => {
+            html += `
+            <tr>
+                <td>${r.name}</td>
+                <td>${r.total_bottles}</td>
+                <td>${r.rate_per_bottle}</td>
+                <td>${r.total_bill}</td>
+            </tr>
+            `;
+        });
+
+        html += `</table>`;
+
+        res.send(html);
+
+    } catch (err) {
+        res.send(err.toString());
+    }
+});
+
+app.listen(4000, '0.0.0.0', () => {
+    console.log('Dashboard running on port 4000');
+});
+cd ~/dashboardcd ~/dashboard
+cd ~/dashboardcd ~/dashboard
