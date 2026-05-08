@@ -1,3 +1,4 @@
+require("dotenv").config();
 const express = require("express");
 const mysql = require("mysql2");
 const cors = require("cors");
@@ -23,10 +24,10 @@ app.use(express.json());
 // =====================================
 
 const db = mysql.createConnection({
-  host: "localhost",
-  user: "root",
-  password: "root123",
-  database: "water_db"
+  host: process.env.DB_HOST,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME
 });
 
 db.connect((err) => {
@@ -419,6 +420,6 @@ app.get("/api/reports", (req, res) => {
 
 });
 
-app.listen(4000, () => {
+app.listen(process.env.PORT, () => {
   console.log("Server running on port 4000");
 });
